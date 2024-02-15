@@ -2,15 +2,18 @@ provider "aws" {
   region = "eu-west-1"
 }
 
+# Create a VPC
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags                 = {
+
+  tags = {
     Name = "Project VPC"
   }
 }
 
+# Create Public Subnets
 resource "aws_subnet" "public_subnet_1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
@@ -24,8 +27,8 @@ resource "aws_subnet" "public_subnet_1" {
 
 resource "aws_subnet" "public_subnet_2" {
   vpc_id                  = aws_vpc.main.id
-  map_public_ip_on_launch = true
   cidr_block              = "10.0.2.0/24"
+  map_public_ip_on_launch = true
   availability_zone       = "eu-west-1b"
 
   tags = {
@@ -33,6 +36,7 @@ resource "aws_subnet" "public_subnet_2" {
   }
 }
 
+# Create Private Subnets
 resource "aws_subnet" "private_subnet_1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.3.0/24"
@@ -42,6 +46,7 @@ resource "aws_subnet" "private_subnet_1" {
     Name = "Private Subnet 1"
   }
 }
+
 resource "aws_subnet" "private_subnet_2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.4.0/24"
@@ -52,6 +57,7 @@ resource "aws_subnet" "private_subnet_2" {
   }
 }
 
+# Create Internet Gateway
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
 
@@ -60,7 +66,8 @@ resource "aws_internet_gateway" "gw" {
   }
 }
 
-resource "aws_route_table" "second_rt" {
+# Create a Route Table for Public Subnets
+resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.main.id
 
   route {
@@ -69,29 +76,32 @@ resource "aws_route_table" "second_rt" {
   }
 
   tags = {
-    Name = "2nd Route Table"
+    Name = "Public Route Table"
   }
 }
 
-resource "aws_route_table_association" "public_subnet_asso1" {
+# Associate Public Subnets with Route Table
+resource "aws_route_table_association" "public_rta_1" {
   subnet_id      = aws_subnet.public_subnet_1.id
-  route_table_id = aws_route_table.second_rt.id
+  route_table_id = aws_route_table.public_rt.id
 }
 
-resource "aws_route_table_association" "public_subnet_asso2" {
+resource "aws_route_table_association" "public_rta_2" {
   subnet_id      = aws_subnet.public_subnet_2.id
-  route_table_id = aws_route_table.second_rt.id
+  route_table_id = aws_route_table.public_rt.id
 }
 
-resource "aws_security_group" "my_security_group" {
-  name   = "test_server_sg"
-  vpc_id = aws_vpc.main.id
+resource "aws_security_group" "web_and_ssh" {
+  name        = "allow_web_ssh"
+  vpc_id      = aws_vpc.main.id
+  description = "Allow Web inbound traffic and SSH"
+
   ingress {
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Access to 8080 port from outside world"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "TCP"
+    description = "Allow HTTP access from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
   }
 
   ingress {
@@ -102,30 +112,30 @@ resource "aws_security_group" "my_security_group" {
     protocol    = "TCP"
   }
 
-  # Allow inbound HTTP traffic
-  ingress {
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTP access from anywhere"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "TCP"
   }
 }
 
-resource "aws_instance" "test_server" {
+resource "aws_instance" "nginx" {
   ami                    = "ami-0aef57767f5404a3c"
   instance_type          = "t2.micro"
   subnet_id              = aws_subnet.public_subnet_1.id
-  vpc_security_group_ids = [aws_security_group.my_security_group.id]
-  user_data              = <<-EOF
-              #!/bin/bash
-              echo "Hello world" > index.html
-              nohup busybox httpd -f -p 8080 &
-              EOF
-  key_name = "terraform_key"
+  vpc_security_group_ids = [aws_security_group.web_and_ssh.id]
+  key_name               = "terraform_key"
+
+  user_data = <<-EOF
+                #!/bin/bash
+                sudo apt-get update
+                sudo apt-get install -y nginx
+                sudo systemctl start nginx
+                sudo systemctl enable nginx
+                EOF
 
   tags = {
-    Name = "Server 1"
+    Name = "Nginx Web Server"
   }
 }
-
