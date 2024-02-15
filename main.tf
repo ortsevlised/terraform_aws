@@ -93,6 +93,23 @@ resource "aws_security_group" "my_security_group" {
     to_port     = 8080
     protocol    = "TCP"
   }
+
+  ingress {
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow SSH access from anywhere"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "TCP"
+  }
+
+  # Allow inbound HTTP traffic
+  ingress {
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP access from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "TCP"
+  }
 }
 
 resource "aws_instance" "test_server" {
@@ -105,6 +122,7 @@ resource "aws_instance" "test_server" {
               echo "Hello world" > index.html
               nohup busybox httpd -f -p 8080 &
               EOF
+  key_name = "terraform_key"
 
   tags = {
     Name = "Server 1"
