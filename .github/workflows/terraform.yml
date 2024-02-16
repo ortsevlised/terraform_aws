@@ -27,21 +27,12 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-        continue-on-error: true
+
+      - name: Terraform Validate
+        run: terraform validate
 
       - name: Terraform Plan
-        id: plan
-        run: terraform plan -out=tfplan
-        continue-on-error: true
-
-      - name: GitHub Actions Notification on Plan Failure
-        if: ${{ failure() }}
-        run: echo "Terraform plan failed for branch ${{ github.ref }} in repository ${{ github.repository }}."
+        run: terraform plan
 
       - name: Terraform Apply
-        if: steps.plan.outcome == 'success'
         run: terraform apply -auto-approve tfplan
-
-      - name: GitHub Actions Notification on Apply Failure
-        if: ${{ failure() }}
-        run: echo "Terraform apply failed for branch ${{ github.ref }} in repository ${{ github.repository }}."
