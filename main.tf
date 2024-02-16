@@ -1,10 +1,9 @@
 provider "aws" {
-  region = "eu-west-1"
+  region = var.region
 }
 
-# Create a VPC
 resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
+  cidr_block           = var.vpc_cidr_block
   enable_dns_support   = true
   enable_dns_hostnames = true
 
@@ -13,51 +12,29 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Create Public Subnets
-resource "aws_subnet" "public_subnet_1" {
+resource "aws_subnet" "public_subnets" {
+  count                   = length(var.public_subnet_cidr_blocks)
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
+  cidr_block              = var.public_subnet_cidr_blocks[count.index]
   map_public_ip_on_launch = true
-  availability_zone       = "eu-west-1a"
+  availability_zone       = element(var.availability_zones, count.index % length(var.availability_zones))
 
   tags = {
-    Name = "Public Subnet 1"
+    Name = "Public Subnet ${count.index + 1}"
   }
 }
 
-resource "aws_subnet" "public_subnet_2" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.2.0/24"
-  map_public_ip_on_launch = true
-  availability_zone       = "eu-west-1b"
-
-  tags = {
-    Name = "Public Subnet 2"
-  }
-}
-
-# Create Private Subnets
-resource "aws_subnet" "private_subnet_1" {
+resource "aws_subnet" "private_subnets" {
+  count             = length(var.private_subnet_cidr_blocks)
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.3.0/24"
-  availability_zone = "eu-west-1a"
+  cidr_block        = var.private_subnet_cidr_blocks[count.index]
+  availability_zone = element(var.availability_zones, count.index % length(var.availability_zones))
 
   tags = {
-    Name = "Private Subnet 1"
+    Name = "Private Subnet ${count.index + 1}"
   }
 }
 
-resource "aws_subnet" "private_subnet_2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.4.0/24"
-  availability_zone = "eu-west-1b"
-
-  tags = {
-    Name = "Private Subnet 2"
-  }
-}
-
-# Create Internet Gateway
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
 
@@ -66,7 +43,6 @@ resource "aws_internet_gateway" "gw" {
   }
 }
 
-# Create a Route Table for Public Subnets
 resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.main.id
 
@@ -80,14 +56,9 @@ resource "aws_route_table" "public_rt" {
   }
 }
 
-# Associate Public Subnets with Route Table
-resource "aws_route_table_association" "public_rta_1" {
-  subnet_id      = aws_subnet.public_subnet_1.id
-  route_table_id = aws_route_table.public_rt.id
-}
-
-resource "aws_route_table_association" "public_rta_2" {
-  subnet_id      = aws_subnet.public_subnet_2.id
+resource "aws_route_table_association" "public_rta" {
+  count          = length(aws_subnet.public_subnets)
+  subnet_id      = aws_subnet.public_subnets[count.index].id
   route_table_id = aws_route_table.public_rt.id
 }
 
@@ -109,7 +80,7 @@ resource "aws_security_group" "web_and_ssh" {
     description = "Allow SSH access from anywhere"
     from_port   = 22
     to_port     = 22
-    protocol    = "TCP"
+    protocol    = "tcp"
   }
 
   egress {
@@ -121,19 +92,12 @@ resource "aws_security_group" "web_and_ssh" {
 }
 
 resource "aws_instance" "nginx" {
-  ami                    = "ami-0aef57767f5404a3c"
-  instance_type          = "t2.micro"
-  subnet_id              = aws_subnet.public_subnet_1.id
+  ami                    = var.instance_ami
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public_subnets[0].id # Change this to the appropriate subnet ID
   vpc_security_group_ids = [aws_security_group.web_and_ssh.id]
   key_name               = "terraform_key"
-
-  user_data = <<-EOF
-                #!/bin/bash
-                sudo apt-get update
-                sudo apt-get install -y nginx
-                sudo systemctl start nginx
-                sudo systemctl enable nginx
-                EOF
+  user_data              = file("nginx.sh")
 
   tags = {
     Name = "Nginx Web Server"
