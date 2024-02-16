@@ -12,34 +12,24 @@ resource "aws_vpc" "main" {
   }
 }
 
-resource "aws_subnet" "public_subnets" {
-  count                   = length(var.public_subnet_cidr_blocks)
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidr_blocks[count.index]
-  map_public_ip_on_launch = true
-  availability_zone       = element(var.availability_zones, count.index % length(var.availability_zones))
-
-  tags = {
-    Name = "Public Subnet ${count.index + 1}"
-  }
-}
-
-resource "aws_subnet" "private_subnets" {
-  count             = length(var.private_subnet_cidr_blocks)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_cidr_blocks[count.index]
-  availability_zone = element(var.availability_zones, count.index % length(var.availability_zones))
-
-  tags = {
-    Name = "Private Subnet ${count.index + 1}"
-  }
-}
-
 resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.main.id
 
   tags = {
     Name = "Project VPC IG"
+  }
+}
+
+resource "aws_subnet" "subnets" {
+  for_each = var.subnets
+
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = each.value.cidr_block
+  availability_zone = each.value.availability_zone
+  map_public_ip_on_launch = each.value.type=="public"
+
+  tags = {
+    Name = "${title(each.key)} Subnet"
   }
 }
 
@@ -57,8 +47,12 @@ resource "aws_route_table" "public_rt" {
 }
 
 resource "aws_route_table_association" "public_rta" {
-  count          = length(aws_subnet.public_subnets)
-  subnet_id      = aws_subnet.public_subnets[count.index].id
+  for_each = {
+    for k, v in var.subnets :
+    k => v if v.type == "public"
+  }
+
+  subnet_id      = aws_subnet.subnets[each.key].id
   route_table_id = aws_route_table.public_rt.id
 }
 
@@ -94,7 +88,7 @@ resource "aws_security_group" "web_and_ssh" {
 resource "aws_instance" "nginx" {
   ami                    = var.instance_ami
   instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public_subnets[0].id # Change this to the appropriate subnet ID
+  subnet_id              = aws_subnet.subnets["public_subnet_1"].id
   vpc_security_group_ids = [aws_security_group.web_and_ssh.id]
   key_name               = "terraform_key"
   user_data              = file("nginx.sh")
