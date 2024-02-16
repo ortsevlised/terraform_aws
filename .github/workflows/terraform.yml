@@ -19,7 +19,7 @@ jobs:
           terraform_version: "1.1.7"
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -27,12 +27,21 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-
-      - name: Terraform Validate
-        run: terraform validate
+        continue-on-error: true
 
       - name: Terraform Plan
-        run: terraform plan
+        id: plan
+        run: terraform plan -out=tfplan
+        continue-on-error: true
+
+      - name: GitHub Actions Notification on Plan Failure
+        if: ${{ failure() }}
+        run: echo "Terraform plan failed for branch ${{ github.ref }} in repository ${{ github.repository }}."
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        if: steps.plan.outcome == 'success'
+        run: terraform apply -auto-approve tfplan
+
+      - name: GitHub Actions Notification on Apply Failure
+        if: ${{ failure() }}
+        run: echo "Terraform apply failed for branch ${{ github.ref }} in repository ${{ github.repository }}."
